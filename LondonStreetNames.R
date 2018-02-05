@@ -4,6 +4,7 @@ library(dplyr)
 library(magrittr)
 library(future.apply)
 library(ggplot2)
+library(stringr)
 
 plan(multiprocess)
 
@@ -16,10 +17,9 @@ rm(cols, files)
 # Select London --------------------------
 lon <- out %>% 
   filter(REGION=="London") %>% 
-  filter(stringr::str_detect(POSTCODE_DISTRICT,"(E|EC|WC|N|NW|W|SE|SW)\\d")) %>%
+  filter(stringr::str_detect(POSTCODE_DISTRICT,"^(E|EC|WC|N|NW|W|SE|SW)\\d")) %>%
   filter(LOCAL_TYPE %in% c("Named Road","Section Of Named Road"))
 
-rm(out)
 
 # lon %>% group_by(POSTCODE_DISTRICT) %>% count(sort=F) %>% View
 # lon %>% filter(stringr::str_detect(NAME1,"Perrymead")) %>% View
@@ -29,7 +29,7 @@ rm(out)
 #   count(sort=T) %>% 
 #   View
 
-lon %>% group_by(LOCAL_TYPE) %>% count()
+# lon %>% group_by(LOCAL_TYPE) %>% count()
 # lon %>% filter(LOCAL_TYPE=="Section Of Named Road") %>% View
 
 # lon %>% group_by(NAME1) %>% filter(n()>1) %>% arrange(NAME1) %>%  View
@@ -45,8 +45,8 @@ road_types <- lon %>%
   count(sort=T) %>% 
   filter(n>=10) %>% 
   pull(ROAD_TYPE) %>% 
-  setdiff(c("East","West","North","South")) %>% 
-  stringr::str_to_lower()
+  stringr::str_to_lower() %>% 
+  setdiff(c("east","west","north","south"))
 
 road_types
 
@@ -60,11 +60,20 @@ tokens_unf <- lon %>%
 tokens <- tokens_unf %>% 
   filter(!word %in% c(road_types,"the"))
 
+tokens %>% print(n=100)
+
 tokens %>% 
-  group_by(word) %>% 
-  count(sort=T)
+  ungroup %>% 
+  top_n(50) %>% 
+  mutate(word = factor(word, levels = rev(word))) %>% 
+  ggplot+
+  geom_col(aes(x=word, y=n))+
+  geom_label(aes(x=word,y=n, label=n))+
+  coord_flip()
 
 
+lon %>% filter(str_detect(NAME1,"^St ")) %>% pull(NAME1)
+lon %>% filter(str_detect(NAME1,"Hall \\w")) %>% pull(NAME1)
 
 
 # Word clustering ------------------------
@@ -74,26 +83,22 @@ names(glove) <- c("word", paste0("dim_",1:100))
 
 
 words <- tokens_unf %>% 
+  filter(n>5) %>% 
   select(word) %>% 
-  unique %>% 
   inner_join(glove)
 
-words_distances <- distances::distances(words, id_variable = "word")
-
+# words_distances <- distances::distances(words, id_variable = "word")
 words_distances <- dist(words, method="euclidian")
-
 # dim(as.matrix(word_distances))
-
-words_cluster <- hclust(words_distances, method="complete")
+words_cluster <- hclust(words_distances, method="ward.D2")
 plot(words_cluster, hang = -1, cex = 0.6)
 
-words_groups <- cutree(words_cluster, h=6)
-words_groups %>% unique %>% length
+words_groups <- cutree(words_cluster, k=10)
+# words_groups %>% unique %>% length
 words_grouped <- words %>% select(word) %>% bind_cols(tibble(group=words_groups))
 rm(words_groups)
 
-words_kmeans <- kmeans(words %>% ungroup %>% select(-word),100, iter.max = 30)
-# words %>% filter_all(any_vars(is.na(.)))
+words_kmeans <- kmeans(words %>% ungroup %>% select(-word),10, iter.max = 30)
 words_grouped <- words %>% select(word) %>% bind_cols(tibble(group=words_kmeans$cluster))
 
 
@@ -117,5 +122,9 @@ words_grouped %>%
 
 words_grouped %>% 
   select(word, group) %>% 
-  filter(group==97) %>% 
+  filter(group==10) %>% 
   pull(word)
+
+words_grouped %>% 
+  filter(word %in% road_types) %>% 
+  View
