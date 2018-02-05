@@ -128,3 +128,42 @@ words_grouped %>%
 words_grouped %>% 
   filter(word %in% road_types) %>% 
   View
+
+
+# PARIS ----------------------------
+
+# readLines("../BAN_licence_gratuite_repartage_75/BAN_licence_gratuite_repartage_75.csv",2)
+
+par <- readr::read_csv2("../BAN_licence_gratuite_repartage_75/BAN_licence_gratuite_repartage_75.csv")
+
+par %<>% select(nom_voie) %>% 
+  distinct %>% 
+  mutate(road_type = word(nom_voie,1))
+
+par %>% group_by(road_type) %>% 
+  count(sort=T) %>% 
+  filter(n>5) %>% 
+  ungroup %>% 
+  mutate(road_type = factor(road_type, levels=rev(road_type))) %>% 
+  ggplot+
+  geom_col(aes(x=road_type,y=n))+
+  coord_flip()
+
+par_road_types <-  par$road_type %>% unique
+
+par_tokens_unf <- par %>%
+  tidytext::unnest_tokens(word,nom_voie) %>% 
+  group_by(word) %>% 
+  count(sort= T)
+
+par_tokens <- par_tokens_unf %>% 
+  filter(!word %in% c(par_road_types,"du","de","des","la","le","et","aux","à","au"))
+
+par_tokens %>% 
+  ungroup %>% 
+  top_n(50) %>% 
+  mutate(word = factor(word, levels = rev(word))) %>% 
+  ggplot+
+  geom_col(aes(x=word, y=n))+
+  geom_label(aes(x=word,y=n, label=n))+
+  coord_flip()
