@@ -19,8 +19,10 @@ rm(cols, files)
 lon <- out %>% 
   filter(REGION=="London") %>% 
   filter(stringr::str_detect(POSTCODE_DISTRICT,"^(E|EC|WC|N|NW|W|SE|SW)\\d")) %>%
-  filter(LOCAL_TYPE %in% c("Named Road","Section Of Named Road"))
+  # filter(LOCAL_TYPE %in% c("Named Road","Section Of Named Road"))
+  filter(LOCAL_TYPE %in% c("Named Road"))
 
+lon %<>% mutate(NAME1_CLN = NAME1 %>% stringr::str_replace("\\s\\([\\w\\s]+\\)",""))
 
 # lon %>% group_by(POSTCODE_DISTRICT) %>% count(sort=F) %>% View
 # lon %>% filter(stringr::str_detect(NAME1,"Perrymead")) %>% View
@@ -37,11 +39,11 @@ lon <- out %>%
 
 
 # Are names the same ? -------------------
-lon %<>% mutate(ROAD_TYPE = NAME1 %>% stringr::str_replace("\\s\\([\\w\\s]+\\)","") %>% stringr::word(-1)) 
+lon %<>% mutate(ROAD_TYPE = NAME1_CLN %>% stringr::word(-1)) 
 # lon %>% group_by(ROAD_TYPE) %>% count(sort=T) %>% View
 # lon %>% filter(ROAD_TYPE=="Cedars") %>% select(NAME1)
 
-road_types <- lon %>% 
+lon_road_types <- lon %>% 
   group_by(ROAD_TYPE) %>% 
   count(sort=T) %>% 
   filter(n>=10) %>% 
@@ -49,21 +51,20 @@ road_types <- lon %>%
   stringr::str_to_lower() %>% 
   setdiff(c("east","west","north","south"))
 
-road_types
+lon_road_types
 
-
-tokens_unf <- lon %>% 
-  select(NAME1, POPULATED_PLACE, DISTRICT_BOROUGH, LOCAL_TYPE) %>% 
-  tidytext::unnest_tokens(word, NAME1) %>% 
+lon_tokens_unf <- lon %>% 
+  select(NAME1_CLN, POPULATED_PLACE, DISTRICT_BOROUGH, LOCAL_TYPE) %>% 
+  tidytext::unnest_tokens(word, NAME1_CLN) %>% 
   group_by(word) %>% 
   count(sort=T)
 
-tokens <- tokens_unf %>% 
-  filter(!word %in% c(road_types,"the"))
+lon_tokens <- lon_tokens_unf %>% 
+  filter(!word %in% c(lon_road_types,"the"))
 
-tokens %>% print(n=100)
+lon_tokens %>% print(n=100)
 
-tokens %>% 
+lon_tokens %>% 
   ungroup %>% 
   top_n(50) %>% 
   mutate(word = factor(word, levels = rev(word))) %>% 
@@ -77,13 +78,25 @@ lon %>% filter(str_detect(NAME1,"^St ")) %>% pull(NAME1)
 lon %>% filter(str_detect(NAME1,"Hall \\w")) %>% pull(NAME1)
 
 
+
+lon_ngrams <- lon %>% 
+  select(NAME1_CLN) %>% 
+  tidytext::unnest_tokens(ngram, 
+                          NAME1_CLN, 
+                          token="ngrams",
+                          n=2,
+                          drop=FALSE,
+                          collapse = FALSE) %>% 
+  group_by(ngram) %>% 
+  count(sort=T)
+lon_ngrams
+
+
 # Word clustering ------------------------
 # files <- list.files("../glove.6B", full.names = TRUE)
 # word_vec <- data.table::fread("../glove.6B/glove.6B.300d.txt") %>% tibble::as.tibble()
-word_vec <- data.table::fread("../", skip=1L) %>% tibble::as.tibble()
-
+word_vec <- data.table::fread("../wiki-news-300d-1M.vec", skip=1L) %>% tibble::as.tibble()
 names(word_vec) <- c("word", paste0("dim_",1:(ncol(word_vec)-1)))
-
 
 words <- tokens_unf %>% 
   filter(n>5) %>% 
@@ -96,7 +109,7 @@ words_distances <- dist(words %>% tibble::column_to_rownames(var="word"), method
 words_cluster <- hclust(words_distances, method="complete")
 plot(words_cluster, hang = -1, cex = 0.6)
 
-words_groups <- cutree(words_cluster, h=0.98)
+words_groups <- cutree(words_cluster, k=20)
 # words_groups %>% unique %>% length
 words_grouped <- words %>% select(word) %>% bind_cols(tibble(group=words_groups))
 
@@ -176,3 +189,16 @@ par_tokens %>%
   geom_col(aes(x=word, y=n))+
   geom_label(aes(x=word,y=n, label=n))+
   coord_flip()
+
+par %<>% mutate(nom_voie_cln = str_replace_all(nom_voie,"(\\w+ )(d[eu]s? )?(la )?(.*)","\\4"))
+
+par_ngrams <- par %>% 
+  tidytext::unnest_tokens(ngram, 
+                          nom_voie_cln, 
+                          token="ngrams",
+                          n=2,
+                          drop=FALSE,
+                          collapse = FALSE) %>% 
+  group_by(ngram) %>% 
+  count(sort=T)
+par_ngrams
