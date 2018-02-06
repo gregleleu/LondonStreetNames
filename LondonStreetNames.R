@@ -78,8 +78,9 @@ lon %>% filter(str_detect(NAME1,"Hall \\w")) %>% pull(NAME1)
 
 # Word clustering ------------------------
 # files <- list.files("../glove.6B", full.names = TRUE)
-glove <- data.table::fread("../glove.6B/glove.6B.100d.txt") %>% tibble::as.tibble()
-names(glove) <- c("word", paste0("dim_",1:100))
+glove <- data.table::fread("../glove.6B/glove.6B.300d.txt") %>% tibble::as.tibble()
+
+names(glove) <- c("word", paste0("dim_",1:(ncol(glove)-1)))
 
 
 words <- tokens_unf %>% 
@@ -90,16 +91,16 @@ words <- tokens_unf %>%
 # words_distances <- distances::distances(words, id_variable = "word")
 words_distances <- dist(words, method="euclidian")
 # dim(as.matrix(word_distances))
-words_cluster <- hclust(words_distances, method="ward.D2")
+words_cluster <- hclust(words_distances, method="complete")
 plot(words_cluster, hang = -1, cex = 0.6)
 
-words_groups <- cutree(words_cluster, k=10)
+words_groups <- cutree(words_cluster, h=9)
 # words_groups %>% unique %>% length
 words_grouped <- words %>% select(word) %>% bind_cols(tibble(group=words_groups))
 rm(words_groups)
 
-words_kmeans <- kmeans(words %>% ungroup %>% select(-word),10, iter.max = 30)
-words_grouped <- words %>% select(word) %>% bind_cols(tibble(group=words_kmeans$cluster))
+# words_kmeans <- kmeans(words %>% ungroup %>% select(-word),30, iter.max = 30)
+# words_grouped <- words %>% select(word) %>% bind_cols(tibble(group=words_kmeans$cluster))
 
 
 words_grouped %>% 
@@ -108,26 +109,32 @@ words_grouped %>%
   ggplot +
   geom_col(aes(x=group,y=n))
 
-tmp <- words_grouped %>% filter(word=="queen") %>% pull(group)
-words_grouped %>% 
-  select(word, group) %>% 
-  filter(group==tmp) %>% 
-  pull(word)
+# tmp <- words_grouped %>% filter(word=="queen") %>% pull(group)
+# words_grouped %>% 
+#   select(word, group) %>% 
+#   filter(group==tmp) %>% 
+#   pull(word)
 
-tmp <- words_grouped %>% filter(word=="road") %>% pull(group)
-words_grouped %>% 
-  select(word, group) %>% 
-  filter(group==tmp) %>% 
-  pull(word)
+# tmp <- words_grouped %>% filter(word=="road") %>% pull(group)
+# words_grouped %>% 
+#   select(word, group) %>% 
+#   filter(group==tmp) %>% 
+#   pull(word)
 
-words_grouped %>% 
-  select(word, group) %>% 
-  filter(group==10) %>% 
-  pull(word)
+words_grouped %>% split(., .[,"group"]) %>% purrr::map(pull,word)
 
 words_grouped %>% 
   filter(word %in% road_types) %>% 
   View
+
+## Testing PCA
+words_pca <- prcomp(words %>% tibble::column_to_rownames(var="word"))
+
+words_pca_tbl <- data.frame(word=words$word,group=words_groups,words_pca$x) %>% tibble::as.tibble()
+
+words_pca_tbl %>% 
+  ggplot(aes(x=PC1,y=PC2))+
+  geom_label(aes(label=word, fill=as.factor(group)))
 
 
 # PARIS ----------------------------
@@ -147,6 +154,7 @@ par %>% group_by(road_type) %>%
   mutate(road_type = factor(road_type, levels=rev(road_type))) %>% 
   ggplot+
   geom_col(aes(x=road_type,y=n))+
+  geom_label(aes(x=road_type,y=n, label=n))+
   coord_flip()
 
 par_road_types <-  par$road_type %>% unique
